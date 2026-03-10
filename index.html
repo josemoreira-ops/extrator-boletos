@@ -335,9 +335,49 @@
     document.getElementById('resultsArea').style.display = 'none';
     document.getElementById('progressLog').innerHTML = '';
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3 * 60 * 1000);
+
     try {
-      log('info', `Enviando ${selectedFile.name} para o servidor…`);
-      animateProgress(0, 40, 3000);
+
+      // ── FASE 1: acordar o servidor (ping /health) ──────────────────────────
+      setProgress(0, 'Verificando servidor…');
+      log('info', 'Conectando ao servidor…');
+
+      let serverReady = false;
+      const wakeStart = Date.now();
+
+      while (!serverReady) {
+        try {
+          const ping = await fetch(`${backendUrl}/health`, {
+            signal: controller.signal,
+          });
+          if (ping.ok) serverReady = true;
+        } catch (_) {
+          // server still sleeping — keep trying
+        }
+
+        if (!serverReady) {
+          const elapsed = Math.round((Date.now() - wakeStart) / 1000);
+          if (elapsed > 90) throw new Error('Servidor não respondeu após 90 segundos.');
+          if (elapsed > 5) {
+            log('warn', `Servidor acordando… ${elapsed}s`);
+            setProgress(null, `Servidor acordando… ${elapsed}s`);
+          }
+          // Crawl progress bar slowly from 0 → 30 while waiting
+          const fakePct = Math.min(30, Math.round(elapsed / 3));
+          setProgress(fakePct, null);
+          await sleep(2000);
+        }
+      }
+
+      clearInterval(_progInterval);
+      log('ok', `Servidor pronto (${Math.round((Date.now() - wakeStart) / 1000)}s)`);
+      setProgress(30, 'Servidor pronto — enviando arquivo…');
+
+      // ── FASE 2: upload do arquivo ──────────────────────────────────────────
+      log('info', `Enviando ${selectedFile.name} (${(selectedFile.size/1024).toFixed(0)} KB)…`);
+      animateProgress(30, 55, 4000);
 
       const formData = new FormData();
       formData.append('file', selectedFile);
@@ -345,16 +385,20 @@
       const res = await fetch(`${backendUrl}/extract`, {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
 
-      animateProgress(40, 95, 1500);
-      log('info', 'Processando no servidor…');
+      clearInterval(_progInterval);
+
+      // ── FASE 3: processamento das páginas ──────────────────────────────────
+      setProgress(55, 'Extraindo dados das páginas…');
+      log('info', 'Processando páginas no servidor…');
+      animateProgress(55, 90, 8000);
 
       const data = await res.json();
+      clearInterval(_progInterval);
 
-      if (!res.ok) {
-        throw new Error(data.error || `Erro HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || `Erro HTTP ${res.status}`);
 
       // Log page-by-page results
       (data.pages || []).forEach(p => {
@@ -367,13 +411,23 @@
       records = data.records || [];
       lastTotal = data.total || '0,00';
 
+      clearTimeout(timeoutId);
       await sleep(600);
       document.getElementById('progressCard').style.display = 'none';
       renderResults();
 
     } catch (err) {
+      clearInterval(_progInterval);
+      clearTimeout(timeoutId);
       document.getElementById('progressCard').style.display = 'none';
-      showError('Erro: ' + err.message);
+
+      if (err.name === 'AbortError') {
+        showError('Timeout de 3 minutos. Tente novamente — o servidor já estará acordado.');
+      } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+        showError('Não foi possível conectar ao servidor. Verifique se a URL do Render está correta.');
+      } else {
+        showError('Erro: ' + err.message);
+      }
       document.getElementById('runBtn').disabled = false;
     }
   }
@@ -453,8 +507,10 @@
   }
 
   function setProgress(pct, label) {
-    document.getElementById('progressPct').textContent = pct + '%';
-    document.getElementById('progressFill').style.width = pct + '%';
+    if (pct !== null) {
+      document.getElementById('progressPct').textContent = pct + '%';
+      document.getElementById('progressFill').style.width = pct + '%';
+    }
     if (label) document.getElementById('progressLabel').textContent = label;
   }
 
