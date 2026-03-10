@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Extrator de Boletos · Porto Saúde</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:       #f0f4f8;
+      --white:    #ffffff;
+      --surface:  #fafbfc;
+      --border:   #dde3ea;
+      --blue:     #1a6cf0;
+      --blue-lt:  #e8f0fe;
+      --green:    #0ca678;
+      --green-lt: #d3f9ee;
+      --red:      #e03131;
+      --red-lt:   #fff5f5;
+      --text:     #1a2533;
+      --muted:    #6b7c93;
+      --muted2:   #a8b6c4;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Nunito', sans-serif; min-height: 100vh; }
+
+    /* ── TOP BAR ── */
+    .topbar {
+      background: var(--white); border-bottom: 1px solid var(--border);
+      padding: 0 32px; height: 60px; display: flex; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .topbar-icon {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, var(--blue), #4ea0ff);
+      border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 17px;
+    }
+    .topbar-title { font-size: 16px; font-weight: 800; }
+    .topbar-title span { color: var(--blue); }
+    .topbar-badge {
+      margin-left: auto; background: var(--blue-lt); color: var(--blue);
+      font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 99px;
+    }
+
+    /* ── LAYOUT ── */
+    .main { max-width: 800px; margin: 0 auto; padding: 36px 20px 80px; }
+    .section-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+    .card { background: var(--white); border: 1px solid var(--border); border-radius: 16px; padding: 28px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+
+    /* ── BACKEND URL INPUT ── */
+    .url-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .url-input {
+      flex: 1; min-width: 200px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+      padding: 10px 14px; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+      color: var(--text); outline: none; transition: border-color .2s;
+    }
+    .url-input:focus { border-color: var(--blue); }
+    .url-save-btn {
+      padding: 10px 18px; background: var(--blue); border: none; border-radius: 9px;
+      color: #fff; font-family: 'Nunito', sans-serif; font-size: 13px; font-weight: 700;
+      cursor: pointer; white-space: nowrap; transition: opacity .2s;
+    }
+    .url-save-btn:hover { opacity: .88; }
+    .url-status { font-size: 12px; margin-top: 6px; }
+    .url-status.ok  { color: var(--green); }
+    .url-status.err { color: var(--red); }
+    .url-hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.6; }
+
+    /* ── DROPZONE ── */
+    .dropzone {
+      border: 2px dashed var(--border); border-radius: 14px; padding: 52px 24px;
+      text-align: center; cursor: pointer; background: var(--surface);
+      transition: border-color .2s, background .2s;
+    }
+    .dropzone:hover, .dropzone.drag-over { border-color: var(--blue); background: var(--blue-lt); }
+    .dropzone.has-file { border-color: var(--blue); border-style: solid; background: var(--blue-lt); }
+    .dropzone input { display: none; }
+    .drop-icon { font-size: 44px; margin-bottom: 12px; display: block; }
+    .drop-title { font-size: 18px; font-weight: 800; margin-bottom: 6px; }
+    .drop-sub   { font-size: 13px; color: var(--muted); }
+    .file-name  { font-size: 16px; font-weight: 700; color: var(--blue); margin-bottom: 4px; }
+    .file-meta  { font-size: 12px; color: var(--muted); }
+    .lock-note {
+      display: flex; align-items: center; gap: 10px;
+      background: #fffbeb; border: 1px solid #f6d860;
+      border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #92620a; margin-top: 16px;
+    }
+
+    /* ── BUTTON ── */
+    .run-btn {
+      width: 100%; padding: 15px;
+      background: linear-gradient(135deg, var(--blue), #4ea0ff);
+      border: none; border-radius: 12px; color: #fff;
+      font-family: 'Nunito', sans-serif; font-size: 16px; font-weight: 800;
+      cursor: pointer; box-shadow: 0 4px 14px rgba(26,108,240,.3);
+      margin-top: 20px; transition: opacity .2s, transform .1s;
+    }
+    .run-btn:hover { opacity: .92; }
+    .run-btn:active { transform: scale(.99); }
+    .run-btn:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+
+    /* ── PROGRESS ── */
+    .progress-card { padding: 24px 28px; }
+    .progress-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .progress-label { font-size: 14px; font-weight: 700; }
+    .progress-pct { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--blue); }
+    .progress-track { height: 8px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+    .progress-fill  { height: 100%; background: linear-gradient(90deg, var(--blue), #4ea0ff); border-radius: 99px; transition: width .5s ease; }
+    .progress-log   { margin-top: 14px; max-height: 130px; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); line-height: 1.9; }
+    .log-ok   { color: var(--green); }
+    .log-info { color: var(--blue); }
+    .log-warn { color: #e08c00; }
+
+    /* ── ERROR ── */
+    .error-card { background: var(--red-lt); border: 1px solid #fcc; border-radius: 12px; padding: 16px 20px; color: var(--red); font-size: 14px; font-weight: 600; margin-bottom: 20px; display: none; }
+
+    /* ── RESULTS ── */
+    .stats-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+    .stat-box  { flex: 1; min-width: 140px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; font-weight: 700; }
+    .stat-val   { font-size: 26px; font-weight: 900; }
+    .stat-val.blue  { color: var(--blue); }
+    .stat-val.green { color: var(--green); }
+    .export-btn {
+      padding: 16px 28px; background: var(--green); border: none; border-radius: 12px; color: #fff;
+      font-family: 'Nunito', sans-serif; font-size: 14px; font-weight: 800;
+      cursor: pointer; white-space: nowrap; box-shadow: 0 4px 12px rgba(12,166,120,.3);
+      display: flex; align-items: center; gap: 8px; transition: opacity .2s;
+    }
+    .export-btn:hover { opacity: .88; }
+
+    /* ── TABLE ── */
+    .table-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .tbl-head {
+      display: grid; grid-template-columns: 50px 1fr 150px; gap: 12px;
+      padding: 11px 18px; background: var(--bg);
+      font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px;
+      font-weight: 700; border-bottom: 1px solid var(--border);
+    }
+    .tbl-body { max-height: 460px; overflow-y: auto; }
+    .tbl-body::-webkit-scrollbar { width: 4px; }
+    .tbl-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    .tbl-row {
+      display: grid; grid-template-columns: 50px 1fr 150px; gap: 12px;
+      padding: 11px 18px; border-bottom: 1px solid var(--border);
+      font-size: 13px; align-items: center; transition: background .12s;
+    }
+    .tbl-row:last-child { border-bottom: none; }
+    .tbl-row:hover { background: var(--blue-lt); }
+    .tbl-num  { color: var(--muted2); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+    .tbl-name { color: var(--text); font-weight: 600; }
+    .tbl-val  { text-align: right; color: var(--green); font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .tbl-total { background: var(--green-lt); border-top: 2px solid var(--green) !important; }
+    .tbl-total:hover { background: var(--green-lt) !important; }
+    .tbl-total-label { color: var(--green); font-weight: 900; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; }
+    .tbl-total-val   { color: var(--green); font-size: 15px; font-weight: 900; text-align: right; }
+
+    /* ── RESET ── */
+    .reset-btn {
+      width: 100%; margin-top: 14px; padding: 12px; background: transparent;
+      border: 1px solid var(--border); border-radius: 10px; color: var(--muted);
+      font-family: 'Nunito', sans-serif; font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: border-color .2s, color .2s;
+    }
+    .reset-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+    footer { text-align: center; font-size: 12px; color: var(--muted2); padding-top: 48px; }
+
+    @keyframes fadeIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
+    .fade-in { opacity:0; animation: fadeIn .35s ease forwards; }
+
+    @media (max-width: 500px) {
+      .topbar { padding: 0 16px; }
+      .main { padding: 20px 12px 60px; }
+      .card { padding: 20px 16px; }
+      .tbl-head, .tbl-row { grid-template-columns: 36px 1fr 110px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="topbar-icon">📋</div>
+    <div class="topbar-title">Extrator <span>Porto Saúde</span></div>
+    <div class="topbar-badge">DP · Departamento Pessoal</div>
+  </div>
+
+  <div class="main">
+
+    <div class="error-card" id="errorBox"></div>
+
+    <!-- CONFIG: backend URL -->
+    <div class="card fade-in" id="configCard">
+      <div class="section-title">⚙️ Configuração</div>
+      <div class="url-row">
+        <input class="url-input" type="url" id="backendUrl"
+               placeholder="https://extrator-porto-saude.onrender.com" />
+        <button class="url-save-btn" onclick="saveBackendUrl()">Salvar URL</button>
+      </div>
+      <div class="url-status" id="urlStatus"></div>
+      <div class="url-hint">
+        Cole aqui a URL do seu serviço no Render.com.<br/>
+        Ela só precisa ser configurada uma vez — fica salva no navegador.
+      </div>
+    </div>
+
+    <!-- UPLOAD -->
+    <div class="card fade-in" id="uploadCard">
+      <div class="section-title">📂 Selecione o boleto</div>
+      <div class="dropzone" id="dropzone"
+           onclick="document.getElementById('fileInput').click()"
+           ondragover="onDragOver(event)" ondragleave="onDragLeave()" ondrop="onDrop(event)">
+        <input type="file" id="fileInput" accept=".pdf" onchange="onFileSelect(event)" />
+        <div id="dropContent">
+          <span class="drop-icon">📄</span>
+          <div class="drop-title">Arraste o PDF aqui</div>
+          <div class="drop-sub">ou clique para selecionar · apenas .pdf</div>
+        </div>
+      </div>
+      <div class="lock-note">🔒 PDFs com senha são desbloqueados automaticamente.</div>
+      <button class="run-btn" id="runBtn" onclick="startExtraction()" disabled>
+        Extrair Dados →
+      </button>
+    </div>
+
+    <!-- PROGRESS -->
+    <div class="card progress-card" id="progressCard" style="display:none">
+      <div class="section-title">⚙️ Processando</div>
+      <div class="progress-top">
+        <span class="progress-label" id="progressLabel">Enviando para o servidor…</span>
+        <span class="progress-pct" id="progressPct">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill" style="width:0%"></div>
+      </div>
+      <div class="progress-log" id="progressLog"></div>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="resultsArea" style="display:none">
+      <div class="card fade-in">
+        <div class="section-title">✅ Resultado</div>
+        <div class="stats-row">
+          <div class="stat-box">
+            <div class="stat-label">Segurados</div>
+            <div class="stat-val blue" id="statCount">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Total R$</div>
+            <div class="stat-val green" id="statTotal">R$ 0,00</div>
+          </div>
+          <button class="export-btn" onclick="exportExcel()">⬇ Baixar Excel</button>
+        </div>
+        <div class="table-wrap">
+          <div class="tbl-head">
+            <span>#</span>
+            <span>Nome do Segurado</span>
+            <span style="text-align:right">Valor R$</span>
+          </div>
+          <div class="tbl-body" id="tableBody"></div>
+        </div>
+        <button class="reset-btn" onclick="resetApp()">↩ Processar outro arquivo</button>
+      </div>
+    </div>
+
+    <footer>Extrator de Boletos Porto Saúde · uso interno DP</footer>
+  </div>
+
+  <script>
+  // ── Config ─────────────────────────────────────────────────────────────────
+  let selectedFile = null;
+  let records = [];
+  let lastTotal = '';
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem('backend_url');
+    if (saved) {
+      document.getElementById('backendUrl').value = saved;
+      setUrlStatus(true);
+    }
+  });
+
+  function saveBackendUrl() {
+    const url = document.getElementById('backendUrl').value.trim().replace(/\/$/, '');
+    if (!url.startsWith('http')) { setUrlStatus(false, 'URL inválida.'); return; }
+    localStorage.setItem('backend_url', url);
+    setUrlStatus(true);
+  }
+
+  function getBackendUrl() {
+    return (localStorage.getItem('backend_url') || '').replace(/\/$/, '');
+  }
+
+  function setUrlStatus(ok, msg) {
+    const el = document.getElementById('urlStatus');
+    el.className = 'url-status ' + (ok ? 'ok' : 'err');
+    el.textContent = ok ? '✓ URL salva' : ('⚠ ' + (msg || 'Erro'));
+  }
+
+  // ── Drop zone ──────────────────────────────────────────────────────────────
+  function onDragOver(e) { e.preventDefault(); document.getElementById('dropzone').classList.add('drag-over'); }
+  function onDragLeave()  { document.getElementById('dropzone').classList.remove('drag-over'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('dropzone').classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  }
+  function onFileSelect(e) { if (e.target.files[0]) loadFile(e.target.files[0]); }
+
+  function loadFile(file) {
+    if (!file.name.toLowerCase().endsWith('.pdf')) { showError('Selecione um arquivo .pdf válido.'); return; }
+    clearError();
+    selectedFile = file;
+    document.getElementById('dropzone').classList.add('has-file');
+    document.getElementById('dropContent').innerHTML = `
+      <span class="drop-icon">📄</span>
+      <div class="file-name">${esc(file.name)}</div>
+      <div class="file-meta">${(file.size/1024).toFixed(0)} KB · clique para trocar</div>`;
+    document.getElementById('runBtn').disabled = false;
+  }
+
+  // ── Main extraction ────────────────────────────────────────────────────────
+  async function startExtraction() {
+    const backendUrl = getBackendUrl();
+    if (!backendUrl) { showError('Configure e salve a URL do servidor Render primeiro.'); return; }
+    if (!selectedFile) return;
+
+    clearError();
+    records = [];
+    document.getElementById('runBtn').disabled = true;
+    document.getElementById('progressCard').style.display = 'block';
+    document.getElementById('resultsArea').style.display = 'none';
+    document.getElementById('progressLog').innerHTML = '';
+
+    try {
+      log('info', `Enviando ${selectedFile.name} para o servidor…`);
+      animateProgress(0, 40, 3000);
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const res = await fetch(`${backendUrl}/extract`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      animateProgress(40, 95, 1500);
+      log('info', 'Processando no servidor…');
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || `Erro HTTP ${res.status}`);
+      }
+
+      // Log page-by-page results
+      (data.pages || []).forEach(p => {
+        log(p.found > 0 ? 'ok' : 'info', `Pág. ${p.page}: ${p.found} segurado(s)`);
+      });
+
+      setProgress(100, 'Concluído!');
+      log('ok', `✓ Total: ${data.count} segurados extraídos`);
+
+      records = data.records || [];
+      lastTotal = data.total || '0,00';
+
+      await sleep(600);
+      document.getElementById('progressCard').style.display = 'none';
+      renderResults();
+
+    } catch (err) {
+      document.getElementById('progressCard').style.display = 'none';
+      showError('Erro: ' + err.message);
+      document.getElementById('runBtn').disabled = false;
+    }
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  function renderResults() {
+    document.getElementById('statCount').textContent = records.length;
+    document.getElementById('statTotal').textContent = 'R$ ' + lastTotal;
+
+    const rows = records.map((r, i) => `
+      <div class="tbl-row">
+        <span class="tbl-num">${i + 1}</span>
+        <span class="tbl-name">${esc(r.nome)}</span>
+        <span class="tbl-val">R$ ${esc(r.valor)}</span>
+      </div>`).join('');
+
+    const totalRow = `
+      <div class="tbl-row tbl-total">
+        <span class="tbl-num"></span>
+        <span class="tbl-total-label">Total Geral</span>
+        <span class="tbl-total-val">R$ ${esc(lastTotal)}</span>
+      </div>`;
+
+    document.getElementById('tableBody').innerHTML = rows + totalRow;
+    document.getElementById('resultsArea').style.display = 'block';
+    document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ── Excel export ───────────────────────────────────────────────────────────
+  function exportExcel() {
+    if (!records.length) return;
+
+    const toFloat = v => parseFloat((v || '0').replace(/\./g, '').replace(',', '.')) || 0;
+
+    const rows = records.map((r, i) => ({
+      '#':                 i + 1,
+      'Nome do Segurado':  r.nome,
+      'Valor R$':          toFloat(r.valor),
+    }));
+
+    // SUM formula total row
+    rows.push({
+      '#':                '',
+      'Nome do Segurado': 'TOTAL GERAL',
+      'Valor R$':         { f: `SUM(C2:C${records.length + 1})` },
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{ wch: 5 }, { wch: 50 }, { wch: 16 }];
+
+    // Currency format for Valor column
+    const ref = XLSX.utils.decode_range(ws['!ref']);
+    for (let row = ref.s.r + 1; row <= ref.e.r; row++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: row, c: 2 })];
+      if (cell) cell.z = '"R$" #,##0.00';
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Segurados');
+    XLSX.writeFile(wb, (selectedFile?.name || 'boleto').replace('.pdf', '') + '_segurados.xlsx');
+  }
+
+  // ── Progress helpers ───────────────────────────────────────────────────────
+  let _progInterval = null;
+
+  function animateProgress(from, to, duration) {
+    clearInterval(_progInterval);
+    const steps = 30;
+    const stepMs = duration / steps;
+    const inc = (to - from) / steps;
+    let current = from;
+    _progInterval = setInterval(() => {
+      current = Math.min(current + inc, to);
+      setProgress(Math.round(current), document.getElementById('progressLabel').textContent);
+      if (current >= to) clearInterval(_progInterval);
+    }, stepMs);
+  }
+
+  function setProgress(pct, label) {
+    document.getElementById('progressPct').textContent = pct + '%';
+    document.getElementById('progressFill').style.width = pct + '%';
+    if (label) document.getElementById('progressLabel').textContent = label;
+  }
+
+  function log(type, msg) {
+    const icons = { ok: '✓', info: '·', warn: '⚠' };
+    const div = document.createElement('div');
+    div.className = 'log-' + type;
+    div.textContent = (icons[type] || '·') + ' ' + msg;
+    const el = document.getElementById('progressLog');
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('errorBox');
+    el.textContent = '⚠ ' + msg;
+    el.style.display = 'block';
+    el.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function clearError() { document.getElementById('errorBox').style.display = 'none'; }
+
+  function resetApp() {
+    selectedFile = null; records = []; lastTotal = '';
+    ['resultsArea', 'progressCard'].forEach(id =>
+      document.getElementById(id).style.display = 'none');
+    document.getElementById('runBtn').disabled = true;
+    document.getElementById('dropzone').classList.remove('has-file');
+    document.getElementById('dropContent').innerHTML = `
+      <span class="drop-icon">📄</span>
+      <div class="drop-title">Arraste o PDF aqui</div>
+      <div class="drop-sub">ou clique para selecionar · apenas .pdf</div>`;
+    document.getElementById('fileInput').value = '';
+    clearError();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  </script>
+</body>
+</html>
